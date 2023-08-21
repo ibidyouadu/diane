@@ -5,6 +5,7 @@ import random
 import os
 import openai
 import redis
+import json
 from settings import OPENAI_API_KEY, OPENWEATHER_API_KEY
 
 openai.api_key = OPENAI_API_KEY
@@ -21,10 +22,11 @@ prompt = {
     "role": "system",
     "content": "You are a helpful assistant named Diane."
 }
-r.rpush(conversation_key, prompt)
+init_payload = json.dumps(prompt)
+r.rpush(conversation_key, init_payload)
+
 
 @app.route("/", methods=["POST"])
-
 def main():
     # Get user input
     input_text = request.values.get("Body", "")
@@ -43,8 +45,8 @@ def main():
     conversation = r.lrange(conversation_key, 0, -1)
     messages = [eval(message) for message in conversation]
     messages.append(input_message)
-    print(messages)
-    r.rpush(conversation_key, input_message)
+    input_payload = json.dumps(input_message)
+    r.rpush(conversation_key, input_payload)
 
     # Call OpenAI API
     openai_res = openai.ChatCompletion.create(
@@ -60,7 +62,8 @@ def main():
         "role": "assistant",
         "content": output_text
     }
-    r.rpush(conversation_key, output_message)
+    output_payload = json.dumps(output_message)
+    r.rpush(conversation_key, output_payload)
 
     # Return OpenAI message
     msg.body(output_text)
