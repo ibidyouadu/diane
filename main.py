@@ -1,16 +1,14 @@
-from flask import Flask, request
-import requests
-from twilio.twiml.messaging_response import MessagingResponse
-import random
-import os
+from fastapi import FastAPI, Form, Depends
+from twilio.rest import Client
 import openai
 import redis
 import json
-from settings import OPENAI_API_KEY, OPENWEATHER_API_KEY
+from settings import OPENAI_API_KEY, OPENWEATHER_API_KEY, TO_NUMBER
+from utils import send_message, logger
 
 openai.api_key = OPENAI_API_KEY
 
-app = Flask(__name__)
+app = FastAPI()
 
 # Initiate redis connection
 r = redis.Redis(host="localhost", port=6379, decode_responses=True)
@@ -26,20 +24,13 @@ init_payload = json.dumps(prompt)
 r.rpush(conversation_key, init_payload)
 
 
-@app.route("/", methods=["POST"])
-def main():
-    # Get user input
-    input_text = request.values.get("Body", "")
-
+@app.post("/")
+async def reply(Body: str=Form()):
     # Add to payload for OpenAI API
     input_message = {
         "role": "user",
-        "content": input_text
+        "content": Body
     }
-
-    # Twilio API. We will put text content in `msg` attributes and return a string representation of `response``
-    response = MessagingResponse()
-    msg = response.message()
 
     # Retrieve conversation from redis in format ready to post to OpenAI. Update redis db with new input
     conversation = r.lrange(conversation_key, 0, -1)
@@ -47,27 +38,27 @@ def main():
     messages.append(input_message)
     input_payload = json.dumps(input_message)
     r.rpush(conversation_key, input_payload)
+    logger.info("Stored the user request in the database.")
 
-    # Call OpenAI API
+    # Call OpenAI API and extract GPT response
     openai_res = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=messages,
         max_tokens=256,
         temperature=0.6
     )
+    output_body = openai_res.choices[0].message.content
 
     # Update redis db with OpenAI response
-    output_text = openai_res.choices[0].message.content
     output_message = {
         "role": "assistant",
-        "content": output_text
+        "content": output_body
     }
     output_payload = json.dumps(output_message)
     r.rpush(conversation_key, output_payload)
+    logger.info("Stored the response in the database.")
 
-    # Return OpenAI message
-    msg.body(output_text)
-    return str(response)
+    # Send response to user
+    send_message(TO_NUMBER, output_body)
 
-if __name__ == "__main__":
-    app.run()
+    return True
