@@ -25,7 +25,7 @@ r.rpush(conversation_key, init_payload)
 
 
 @app.post("/")
-async def reply(Body: str=Form()):
+async def reply(Body: str=Form(), From: str=Form()):
     # Add to payload for OpenAI API
     input_message = {
         "role": "user",
@@ -59,6 +59,6 @@ async def reply(Body: str=Form()):
     logger.info("Stored the response in the database.")
 
     # Send response to user
-    send_message(TO_NUMBER, output_body)
+    send_message(From, output_body)
 
     return True
